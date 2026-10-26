@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from icefall.utils import AttributeDict
+from .attribute_dict import AttributeDict
 from spikingjelly.activation_based import functional
 
 

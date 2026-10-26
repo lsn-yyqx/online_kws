@@ -7,7 +7,7 @@
 import logging
 from pathlib import Path
 
-from icefall.utils import AttributeDict
+from .attribute_dict import AttributeDict
 from omegaconf import OmegaConf
 
 # 项目根目录 = AlphaSNN（框架根；utils → kws → asr → alpha → AlphaSNN）

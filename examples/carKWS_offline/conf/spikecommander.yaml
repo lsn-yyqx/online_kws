@@ -1,0 +1,148 @@
+# carKWS + original SpikeCommander
+# Requires a SpikeCommanderKWS Lightning system that adapts the Lhotse dict
+# batch to SpikeCommander's (x, attention_mask) interface.
+#
+# Before training:
+#   examples/carKWS_offline/data must resolve to this repository's data/
+#   directory, because the cuts files store feature paths as
+#   examples/carKWS_offline/data/....
+
+name: carKWS
+version: spikecommander01
+
+system:
+  name: SpikeCommanderKWS
+  exp_name: carKWS_SpikeCommander
+  debug: false
+  seed: 312
+  log_dir: exp/logs
+  train_and_test: true
+  test_metric: false
+
+model:
+  name: SpikeCommander
+  mask: false
+  debug: ${system.debug}
+  param:
+    debug: ${system.debug}
+
+    # carKWS uses this only as a model-side tag; do not use "gsc" here.
+    dataset: carKWS
+
+    # Spiking neurons
+    spike_mode: lif
+    init_tau: 2.0
+    v_threshold: 1.0
+    v_reset: 0.5
+    alpha: 5.0
+    surrogate: atan
+    detach_reset: true
+    backend: cupy
+
+    # carKWS precomputed FBank shape
+    n_inputs: 80
+    n_outputs: 29
+
+    # Original SpikeCommander/GSC-like capacity
+    n_hidden_neurons: 256
+    num_heads: 16
+    depths: 2
+    hidden_dims: 1024
+    kernel_size: 31
+    attention_window: 20
+
+    # Regularization
+    use_bn: true
+    use_dp: true
+    use_dw_bias: false
+    dropout_l: 0.1
+    dropout_p: 0.1
+
+    # Metadata for the carKWS FBank frontend
+    window_size: 256
+    hop_length: 80
+    n_mels: 80
+    time_step: 10
+
+loss:
+  name: SpikingCELoss
+  time_reduce: sum
+  label_smoothing: 0.1
+
+optimizer:
+  name: AdamW
+  lr: 0.002
+  weight_decay: 0.005
+  betas: [0.9, 0.999]
+  lr_scheduler:
+    name: WarmupCosineScheduler
+    warmup_epochs: 10
+    max_epochs: 100
+    min_lr: 0.0
+
+data:
+  sample_rate: 16000
+  dataset_type: map
+  use_spike_input: true
+
+  dataloader:
+    batch_size: 64
+    num_workers: 8
+
+  train:
+    manifest_dir: examples/carKWS_offline/data
+    cuts_file: command_cuts_train_29.jsonl
+    max_duration: 200
+    num_buckets: 30
+    num_workers: 8
+    spec_augment:
+      time_warp_factor: 80
+      num_frame_masks: 1
+      frames_mask_size: 15
+      num_feature_masks: 1
+      features_mask_size: 5
+
+  valid:
+    manifest_dir: examples/carKWS_offline/data
+    cuts_file: command_cuts_test_29.jsonl
+    max_duration: 200
+    num_buckets: 30
+    num_workers: 8
+
+  test:
+    manifest_dir: examples/carKWS_offline/data
+    cuts_file: command_cuts_test_29.jsonl
+    max_duration: 200
+    num_buckets: 30
+    num_workers: 8
+
+trainer:
+  max_epochs: 100
+  gradient_clip_val: 5.0
+  log_every_n_steps: 50
+  strategy: auto
+  precision: 32
+  benchmark: true
+
+trainer_callbacks:
+  progress_logger: true
+  model_checkpoint:
+    monitor: valid/acc
+    mode: max
+    save_top_k: 3
+    save_last: true
+    auto_insert_metric_name: false
+    filename: 'best-acc'
+
+stft:
+  n_fft: 256
+  win_length: 256
+  hop_length: 80
+  window: hann
+  center: true
+  normalized: false
+  onesided: true
+  power: null
+
+pool:
+  max_workers: 4

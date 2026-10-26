@@ -24,7 +24,7 @@ from omegaconf import OmegaConf
 from spikingjelly.activation_based import functional
 
 from modules.utils.logging import logger
-from alpha.asr.system import LiteASR, MultiTauSpikeASR
+from alpha.asr.system import LiteASR, MultiTauSpikeASR, SpikeASR
 from alpha.asr.model.tdnn_lstm import TdnnLstm
 from alpha.asr.kws.dataset import build_eval_loader, build_train_loader
 from alpha.asr.model.multitau_lif_commander_kws import subsampling_mask
@@ -282,4 +282,47 @@ class MultiTauKwsKd(LhotseKwsMixin, MultiTauSpikeASR):
         return build_checkpoint_callbacks(self.conf)
 
 
-__all__ = ['AnnKwsTeacher', 'MultiTauKwsKd']
+class SpikeCommanderKWS(LhotseKwsMixin, SpikeASR):
+    """Lhotse KWS adapter for the original SpikeCommander model."""
+
+    def __init__(self, conf):
+        if conf['model']['name'] != 'SpikeCommander':
+            raise ValueError('SpikeCommanderKWS requires model.name=SpikeCommander')
+        super().__init__(conf)
+
+    def forward(self, batch):
+        x = batch['inputs'].to(self.device).float()   # [B, T, F]
+        lengths = batch_lengths(batch, x.device)
+        labels = extract_labels(batch, x.device)
+        attention_mask = self._make_attention_mask(lengths, x)
+
+        functional.reset_net(self.model)
+        model_out = self.model(x, attention_mask)
+
+        logits, loss_mask = self._prepare_loss_input(model_out, attention_mask)
+        return self.loss(logits, loss_mask, labels)
+
+    def _classification_step(self, split, batch):
+        asr_loss, loss_info = self.forward(batch)
+        loss_stat = self.loss.log_stat(loss_info)
+        batch_size = batch['inputs'].shape[0]
+        log_kwargs = {
+            'on_step': split == 'train',
+            'on_epoch': True,
+            'sync_dist': True,
+            'batch_size': batch_size,
+        }
+        self.log(f'{split}/asr_loss', asr_loss, **log_kwargs)
+        self.log(f'{split}/loss_per', loss_stat['loss'], **log_kwargs)
+        self.log(f'{split}/acc', loss_info['token_acc'],
+                 on_epoch=True, sync_dist=True,
+                 batch_size=batch_size, prog_bar=True)
+        return asr_loss
+
+    def on_test_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
+        self.test_batches_seen += 1
+        self.test_samples_seen += batch['inputs'].shape[0]
+        functional.reset_net(self.model)
+
+
+__all__ = ['AnnKwsTeacher', 'MultiTauKwsKd', 'SpikeCommanderKWS']

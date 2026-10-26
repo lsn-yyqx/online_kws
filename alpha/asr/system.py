@@ -515,6 +515,6 @@ class MultiTauSpikeASR(SpikeASR):
 # KWS 任务系统注册（中文车载 29 类指令，详见 alpha/asr/kws/system.py）。
 # 放在文件末尾：本模块先完成定义，kws.system 再引用上面的类，避免循环导入。
 try:
-    from .kws.system import AnnKwsTeacher, MultiTauKwsKd  # noqa: F401,E402
+    from .kws.system import AnnKwsTeacher, MultiTauKwsKd, SpikeCommanderKWS  # noqa: F401,E402
 except ImportError as e:  # lhotse 等可选依赖缺失时跳过，不影响其他任务
     logger.warning(f'KWS systems not registered: {e}')
